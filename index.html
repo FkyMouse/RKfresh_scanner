@@ -2,37 +2,113 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Сканер штрих-кода</title>
-    <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
-    <script type="text/javascript" src="https://telegram.org/js/telegram-web-app.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Сканер штрих-кода / QR</title>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { margin: 0; padding: 0; background: black; }
-        video { width: 100%; height: auto; }
+        body { margin:0; padding:0; font-family:sans-serif; background:#000; color:#fff; height:100vh; overflow:hidden; }
+        #reader { width:100%; max-width:500px; margin:0 auto; }
+        #status { position:absolute; bottom:80px; left:0; right:0; text-align:center; padding:10px; background:rgba(0,0,0,0.6); }
+        #controls { position:absolute; bottom:20px; left:0; right:0; text-align:center; }
+        button { padding:12px 24px; font-size:18px; background:#0088cc; color:white; border:none; border-radius:8px; margin:10px; cursor:pointer; }
     </style>
 </head>
 <body>
-    <video id="video" autoplay playsinline></video>
+    <div id="reader"></div>
+    <div id="status">Открытие камеры...</div>
+    <div id="controls">
+        <button id="galleryBtn">Сканировать из галереи</button>
+        <button id="stopBtn" style="display:none;">Остановить</button>
+    </div>
+
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
+        tg.expand();
 
-        const codeReader = new ZXing.BrowserMultiFormatReader();
-        codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
-            if (result) {
-                console.log('Распознан штрих-код:', result.text);
-                tg.MainButton.text = 'Отправить в чат';
-                tg.MainButton.show();
-                window.scannedCode = result.text;
-            }
-            if (err && !(err instanceof ZXing.NotFoundException)) {
-                console.error(err);
-            }
-        });
+        const html5QrCode = new Html5Qrcode("reader");
+        const status = document.getElementById("status");
+        let scanning = false;
 
+        const config = {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.UPC_A ]
+        };
+
+        function onScanSuccess(decodedText, decodedResult) {
+            status.innerText = `Найден: ${decodedText}`;
+            tg.MainButton.setText(`Отправить: ${decodedText}`);
+            tg.MainButton.show();
+            window.scannedCode = decodedText;
+            stopScanning();
+        }
+
+        function onScanFailure(error) {
+            // Игнорируем обычные "не найдено"
+            if (error?.startsWith?.("No MultiFormat Readers")) return;
+            console.warn(error);
+        }
+
+        async function startScanning() {
+            try {
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    onScanSuccess,
+                    onScanFailure
+                );
+                scanning = true;
+                status.innerText = "Наведите на штрих-код...";
+                document.getElementById("stopBtn").style.display = "inline-block";
+            } catch (err) {
+                console.error("Ошибка запуска камеры:", err);
+                status.innerText = "Не удалось открыть камеру. Используйте галерею.";
+                // Telegram часто блокирует → сразу переходим к галерее
+            }
+        }
+
+        function stopScanning() {
+            if (scanning) {
+                html5QrCode.stop().then(() => {
+                    scanning = false;
+                    status.innerText = "Сканирование остановлено";
+                    document.getElementById("stopBtn").style.display = "none";
+                });
+            }
+        }
+
+        // Кнопка галереи (fallback, работает почти всегда в Telegram)
+        document.getElementById("galleryBtn").onclick = () => {
+            stopScanning();
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = "image/*";
+            input.onchange = async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                    const result = await html5QrCode.scanFile(file, true);
+                    onScanSuccess(result.decodedText, result);
+                } catch (err) {
+                    status.innerText = "Не удалось распознать. Попробуйте другое фото.";
+                    console.error(err);
+                }
+            };
+            input.click();
+        };
+
+        document.getElementById("stopBtn").onclick = stopScanning;
+
+        // Автозапуск live-сканирования
+        startScanning();
+
+        // Главная кнопка Telegram
         tg.MainButton.onClick(() => {
             if (window.scannedCode) {
-                tg.sendData(window.scannedCode);  // Отправляем данные боту
-                tg.close();  // Закрываем мини-приложение
+                tg.sendData(window.scannedCode);
+                tg.close();
             }
         });
     </script>
