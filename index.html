@@ -113,6 +113,17 @@
         };
 
         function onScanSuccess(decodedText, decodedResult) {
+
+            // Визуальный отклик
+            const line = document.querySelector(".scan-line");
+            if (line) {
+                line.style.background = "linear-gradient(90deg, transparent, #00ff00, transparent)";
+                line.style.boxShadow = "0 0 20px #00ff00";
+                setTimeout(() => {
+                    line.style.background = "linear-gradient(90deg, transparent, #00ff9d, transparent)";
+                    line.style.boxShadow = "0 0 12px #00ff9d, 0 0 24px #00ff9d";
+                }, 1200);
+            }
             status.innerText = `Найден: ${decodedText}`;
             tg.MainButton.setText(`Отправить: ${decodedText}`);
             tg.MainButton.show();
@@ -250,3 +261,4 @@
     </script>
 </body>
 </html>
+
