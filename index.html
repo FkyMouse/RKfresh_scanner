@@ -35,7 +35,7 @@
             right: 10px;
             text-align: center;
             padding: 12px 16px;
-            background: rgba(0,0,0,0.6);
+            background: rgba(0,0,0,0.65);
             border-radius: 12px;
             font-size: 16px;
             z-index: 20;
@@ -81,6 +81,7 @@
         <button id="galleryBtn">Из галереи</button>
         <button id="torchBtn">Фонарик вкл</button>
         <button id="stopBtn" style="display:none;">Остановить</button>
+        <button id="restartBtn" style="display:none;">Запустить заново</button>
     </div>
 
     <script>
@@ -144,7 +145,7 @@
 
                 return backCameras[0]?.deviceId || null;
             } catch (err) {
-                console.error("Ошибка камер:", err);
+                console.error("Ошибка получения камер:", err);
                 return null;
             }
         }
@@ -161,17 +162,16 @@
                 scanning = true;
                 status.innerText = "Наведите на код";
                 document.getElementById("stopBtn").style.display = "block";
+                document.getElementById("restartBtn").style.display = "none";
 
-                // Проверяем поддержку torch (без авто-включения)
+                // Проверка поддержки фонарика (без включения)
                 try {
-                    await html5QrCode.applyVideoConstraints({ advanced: [{ torch: true }] });
+                    await html5QrCode.applyVideoConstraints({ advanced: [{ torch: false }] });
                     torchSupported = true;
                     document.getElementById("torchBtn").style.display = "block";
-                    // Сразу выключаем, если не нужно по умолчанию
-                    await html5QrCode.applyVideoConstraints({ advanced: [{ torch: false }] });
-                    torchOn = false;
+                    document.getElementById("torchBtn").innerText = "Фонарик вкл";
+                    document.getElementById("torchBtn").classList.remove("torch-active");
                 } catch (e) {
-                    console.warn("Torch не поддерживается:", e);
                     torchSupported = false;
                     document.getElementById("torchBtn").style.display = "none";
                 }
@@ -186,16 +186,22 @@
             if (scanning) {
                 html5QrCode.stop().then(() => {
                     scanning = false;
-                    torchOn = false;
+                    if (torchOn) {
+                        html5QrCode.applyVideoConstraints({ advanced: [{ torch: false }] }).catch(() => {});
+                        torchOn = false;
+                        document.getElementById("torchBtn").innerText = "Фонарик вкл";
+                        document.getElementById("torchBtn").classList.remove("torch-active");
+                    }
                     status.innerText = "Сканирование остановлено";
                     document.getElementById("stopBtn").style.display = "none";
-                    document.getElementById("torchBtn").classList.remove("torch-active");
+                    document.getElementById("restartBtn").style.display = "block";
                     html5QrCode.clear();
-                });
+                }).catch(err => console.error("Ошибка остановки:", err));
             }
         }
 
-        // Кнопки
+        // ─── Кнопки ──────────────────────────────────────────────────
+
         document.getElementById("galleryBtn").onclick = async () => {
             stopScanning();
             status.innerText = "Выберите фото";
@@ -217,20 +223,22 @@
 
         document.getElementById("stopBtn").onclick = stopScanning;
 
+        document.getElementById("restartBtn").onclick = startScanning;
+
         document.getElementById("torchBtn").onclick = async () => {
-            if (!torchSupported) return;
+            if (!torchSupported || scanning === false) return;
             torchOn = !torchOn;
             try {
                 await html5QrCode.applyVideoConstraints({ advanced: [{ torch: torchOn }] });
                 document.getElementById("torchBtn").innerText = torchOn ? "Фонарик выкл" : "Фонарик вкл";
                 document.getElementById("torchBtn").classList.toggle("torch-active", torchOn);
             } catch (err) {
-                status.innerText = "Фонарик не работает на этом устройстве";
+                status.innerText = "Фонарик не работает";
                 console.error(err);
             }
         };
 
-        // Запуск
+        // Запуск при загрузке страницы
         startScanning();
 
         tg.MainButton.onClick(() => {
