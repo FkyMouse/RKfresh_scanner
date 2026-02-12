@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Сканер штрих-кода</title>
+    <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+    <script type="text/javascript" src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background: black; }
+        video { width: 100%; height: auto; }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+
+        const codeReader = new ZXing.BrowserMultiFormatReader();
+        codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
+            if (result) {
+                console.log('Распознан штрих-код:', result.text);
+                tg.MainButton.text = 'Отправить в чат';
+                tg.MainButton.show();
+                window.scannedCode = result.text;
+            }
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+                console.error(err);
+            }
+        });
+
+        tg.MainButton.onClick(() => {
+            if (window.scannedCode) {
+                tg.sendData(window.scannedCode);  // Отправляем данные боту
+                tg.close();  // Закрываем мини-приложение
+            }
+        });
+    </script>
+</body>
+</html>
