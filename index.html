@@ -17,57 +17,87 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }
         #reader {
             width: 100%;
+            height: 100%;
             flex: 1;
-            max-width: 500px;
-            margin: 0 auto;
+            position: relative;
         }
         #status {
             position: absolute;
-            bottom: 140px;
-            left: 0;
-            right: 0;
+            top: 20px;
+            left: 10px;
+            right: 10px;
             text-align: center;
-            padding: 12px;
-            background: rgba(0,0,0,0.65);
-            font-size: 16px;
-            z-index: 10;
+            padding: 16px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 16px;
+            font-size: 17px;
+            z-index: 20;
+            backdrop-filter: blur(6px);
         }
         #controls {
             position: absolute;
-            bottom: 20px;
+            bottom: 40px;
             left: 0;
             right: 0;
-            text-align: center;
-            z-index: 10;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            z-index: 20;
+            flex-wrap: wrap;
         }
         button {
-            padding: 14px 28px;
-            font-size: 17px;
+            padding: 16px 36px;
+            font-size: 18px;
             background: #0088cc;
             color: white;
             border: none;
-            border-radius: 12px;
-            margin: 8px;
+            border-radius: 14px;
             cursor: pointer;
+            min-width: 160px;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.5);
             touch-action: manipulation;
+        }
+        button.gallery {
+            background: #555;
         }
         button:disabled {
             opacity: 0.5;
+            cursor: not-allowed;
         }
     </style>
 </head>
 <body>
 
     <div id="reader"></div>
-    <div id="status">Открытие камеры...</div>
+
+    <div id="status">Открываем камеру...</div>
+
     <div id="controls">
-        <button id="galleryBtn">Из галереи</button>
-        <button id="torchBtn" style="display:none;">Фонарик вкл</button>
-        <button id="stopBtn" style="display:none;">Остановить</button>
+        <button id="openCameraBtn">Сделать фото камерой</button>
+        <button id="galleryBtn" class="gallery">Из галереи (запасной)</button>
     </div>
+
+    <!-- Скрытый input для камеры -->
+    <input 
+        type="file" 
+        accept="image/*" 
+        capture="environment" 
+        id="cameraInput" 
+        style="display: none;"
+    />
+
+    <!-- Скрытый input для галереи (без capture) -->
+    <input 
+        type="file" 
+        accept="image/*" 
+        id="galleryInput" 
+        style="display: none;"
+    />
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -76,181 +106,75 @@
 
         const html5QrCode = new Html5Qrcode("reader");
         const status = document.getElementById("status");
-        let scanning = false;
-        let torchOn = false;
+        let processing = false;
 
-        const config = {
-            fps: 12,
-            qrbox: { width: 280, height: 280 },
-            aspectRatio: 4 / 3,
-            disableFlip: false,
-            experimentalFeatures: {
-                useBarCodeDetectorIfSupported: true
-            },
-            formatsToSupport: [
-                Html5QrcodeSupportedFormats.QR_CODE,
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.UPC_E,
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.CODE_39
-            ]
-        };
-
-        function onScanSuccess(decodedText, decodedResult) {
-            status.innerText = `Найден: ${decodedText}`;
-            tg.MainButton.setText(`Отправить: ${decodedText}`);
-            tg.MainButton.show();
-            window.scannedCode = decodedText;
-            stopScanning();
-        }
-
-        function onScanFailure(errorMessage) {
-            // Игнорируем обычные "не найдено"
-            if (errorMessage?.includes?.("No MultiFormat Readers")) return;
-            // console.debug(errorMessage);
-        }
-
-        async function getBestBackCamera() {
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const videoDevices = devices.filter(d => d.kind === 'videoinput');
-
-                if (videoDevices.length === 0) return null;
-
-                // Предпочтение: основной задний сенсор
-                const backCameras = videoDevices.filter(d =>
-                    !d.label.toLowerCase().includes('front') &&
-                    (d.label.toLowerCase().includes('back') ||
-                     d.label.toLowerCase().includes('rear') ||
-                     d.label.toLowerCase().includes('main') ||
-                     d.label.toLowerCase().includes('0') ||
-                     d.label.toLowerCase().includes('environment'))
-                );
-
-                // Если нет явных "back" — берём первую не фронтальную
-                if (backCameras.length === 0) {
-                    return videoDevices.find(d => !d.label.toLowerCase().includes('front'))?.deviceId || null;
-                }
-
-                // Сортируем: приоритет тем, у кого в названии "0", "main", "back"
-                backCameras.sort((a, b) => {
-                    const getScore = label => {
-                        let score = 0;
-                        if (label.includes('0') || label.includes('main')) score += 10;
-                        if (label.includes('back') || label.includes('rear')) score += 5;
-                        return score;
-                    };
-                    return getScore(b.label) - getScore(a.label);
-                });
-
-                return backCameras[0]?.deviceId || null;
-            } catch (err) {
-                console.error("Ошибка получения списка камер:", err);
-                return null;
-            }
-        }
-
-        async function startScanning() {
-            status.innerText = "Пытаемся открыть основную камеру...";
-
-            let constraints = { facingMode: { ideal: "environment" } };
-
-            const deviceId = await getBestBackCamera();
-            if (deviceId) {
-                constraints = { deviceId: { exact: deviceId } };
-                status.innerText = "Запущена основная задняя камера";
-            }
+        // ─── Основная функция обработки файла ────────────────────────────────────────
+        async function processImage(file) {
+            if (!file || processing) return;
+            processing = true;
+            status.innerText = "Распознаю код...";
 
             try {
-                await html5QrCode.start(
-                    constraints,
-                    config,
-                    onScanSuccess,
-                    onScanFailure
-                );
+                const result = await html5QrCode.scanFile(file, true);
+                const code = result.decodedText;
 
-                scanning = true;
-                status.innerText = "Наведите на штрих-код / QR";
-                document.getElementById("stopBtn").style.display = "inline-block";
-                document.getElementById("torchBtn").style.display = "inline-block";
+                status.innerText = `Найден: ${code}`;
+                tg.MainButton.setText(`Отправить: ${code}`);
+                tg.MainButton.show();
+                window.scannedCode = code;
 
-                // Пробуем включить фонарик автоматически (если поддерживается)
-                html5QrCode.applyTorch(true).then(() => {
-                    torchOn = true;
-                    document.getElementById("torchBtn").innerText = "Фонарик выкл";
-                }).catch(() => {
-                    // Фонарик не поддерживается — скрываем кнопку
-                    document.getElementById("torchBtn").style.display = "none";
-                });
+                // Зелёная вспышка успеха (если есть оверлей — можно добавить класс)
+                document.body.style.background = "#0a3";
+                setTimeout(() => document.body.style.background = "#000", 800);
 
             } catch (err) {
-                console.error("Ошибка запуска сканирования:", err);
-                status.innerText = "Не удалось открыть камеру. Используйте «Из галереи»";
-                document.getElementById("torchBtn").style.display = "none";
+                console.error("Ошибка распознавания:", err);
+                status.innerText = "Не удалось распознать код.\nПопробуйте другое фото или лучшее освещение.";
+            } finally {
+                processing = false;
+                // Очищаем input
+                document.getElementById("cameraInput").value = "";
+                document.getElementById("galleryInput").value = "";
             }
         }
 
-        function stopScanning() {
-            if (scanning) {
-                html5QrCode.stop().then(() => {
-                    scanning = false;
-                    torchOn = false;
-                    status.innerText = "Сканирование остановлено";
-                    document.getElementById("stopBtn").style.display = "none";
-                    document.getElementById("torchBtn").style.display = "none";
-                    html5QrCode.clear();
-                }).catch(err => console.error("Ошибка остановки:", err));
-            }
-        }
+        // ─── Кнопка "Сделать фото камерой" ───────────────────────────────────────────
+        document.getElementById("openCameraBtn").addEventListener("click", () => {
+            status.innerText = "Открываем камеру...";
+            document.getElementById("cameraInput").click();
+        });
 
-        // ─── Обработчики кнопок ──────────────────────────────────────
+        document.getElementById("cameraInput").addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (file) processImage(file);
+        });
 
-        document.getElementById("galleryBtn").onclick = async () => {
-            stopScanning();
-            status.innerText = "Выберите фото со штрих-кодом";
+        // ─── Кнопка "Из галереи" (запасной вариант) ──────────────────────────────────
+        document.getElementById("galleryBtn").addEventListener("click", () => {
+            status.innerText = "Выберите фото из галереи...";
+            document.getElementById("galleryInput").click();
+        });
 
-            const input = document.createElement("input");
-            input.type = "file";
-            input.accept = "image/*";
-            input.click();
+        document.getElementById("galleryInput").addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (file) processImage(file);
+        });
 
-            input.onchange = async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
+        // ─── Автозапуск камеры при загрузке страницы ────────────────────────────────
+        setTimeout(() => {
+            document.getElementById("openCameraBtn").click();
+        }, 800);  // небольшая задержка, чтобы Telegram успел инициализироваться
 
-                status.innerText = "Распознаю...";
-                try {
-                    const result = await html5QrCode.scanFile(file, /* returnDetailedScanResult */ true);
-                    onScanSuccess(result.decodedText, result);
-                } catch (err) {
-                    status.innerText = "Не удалось распознать код на фото";
-                    console.error(err);
-                }
-            };
-        };
-
-        document.getElementById("stopBtn").onclick = stopScanning;
-
-        document.getElementById("torchBtn").onclick = () => {
-            torchOn = !torchOn;
-            html5QrCode.applyTorch(torchOn);
-            document.getElementById("torchBtn").innerText = torchOn ? "Фонарик выкл" : "Фонарик вкл";
-        };
-
-        // ─── Запуск при загрузке ─────────────────────────────────────
-
-        startScanning();
-
-        // ─── Отправка результата в бота ──────────────────────────────
-
+        // ─── Отправка результата в бота ──────────────────────────────────────────────
         tg.MainButton.onClick(() => {
             if (window.scannedCode) {
                 tg.sendData(window.scannedCode);
                 tg.close();
             }
         });
+
+        // Показываем главную кнопку только после успешного сканирования
+        tg.MainButton.hide();
     </script>
 </body>
 </html>
