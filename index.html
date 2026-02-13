@@ -62,14 +62,19 @@ const devices = await Html5Qrcode.getCameras();
 // Выбираем камеру с index 0 (или по id)
 const cameraId = devices[0].id; // <-- камера 0
 try{
- await reader.start(
-        cameraId, // передаём deviceId вместо facingMode
-        {
-            fps: 8,
-            qrbox: { width: 260, height: 160 }
-        },
-        detectCandidate
-    );
+await reader.start(
+  {
+    facingMode: "environment",
+    width:  { ideal: 1280 },
+    height: { ideal: 720 },
+    zoom:   { ideal: 1.4 }
+  },
+  {
+    fps: 8,
+    qrbox: { width: 260, height: 160 },
+  },
+  detectCandidate
+);
 
 statusEl.innerText="Наведите камеру на штрих-код";
 
@@ -161,5 +166,6 @@ setTimeout(startScanner,300);
 </script>
 </body>
 </html>
+
 
 
