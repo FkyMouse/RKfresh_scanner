@@ -2,28 +2,74 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1, user-scalable=no">
 <title>EAN13 Scanner</title>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
 <style>
-body{margin:0;background:#000;color:#fff;font-family:system-ui;overflow:hidden}
-#reader{position:fixed;inset:0}
+body{
+    margin:0;
+    background:#000;
+    color:#fff;
+    font-family:system-ui;
+    overflow:hidden;
+}
+
+#reader{
+    position:fixed;
+    inset:0;
+}
+
 #status{
-position:fixed;top:15px;left:10px;right:10px;text-align:center;
-padding:14px;border-radius:16px;background:rgba(0,0,0,.65);
-backdrop-filter:blur(6px);font-size:17px;z-index:10}
+    position:fixed;
+    top:15px;
+    left:10px;
+    right:10px;
+    text-align:center;
+    padding:14px;
+    border-radius:16px;
+    background:rgba(0,0,0,.65);
+    backdrop-filter:blur(6px);
+    font-size:17px;
+    z-index:10;
+}
+
 #controls{
-position:fixed;bottom:30px;width:100%;display:flex;
-justify-content:center;gap:12px;z-index:10}
+    position:fixed;
+    bottom:35px;
+    width:100%;
+    display:flex;
+    justify-content:center;
+    z-index:10;
+}
+
 button{
-padding:14px 22px;border:none;border-radius:14px;
-font-size:16px;background:#444;color:white}
-.flash{position:fixed;inset:0;background:#00c853;opacity:0;pointer-events:none}
-.flash.active{animation:flash .5s}
-@keyframes flash{from{opacity:.85}to{opacity:0}}
+    padding:15px 28px;
+    border:none;
+    border-radius:14px;
+    font-size:17px;
+    background:#444;
+    color:white;
+}
+
+.flash{
+    position:fixed;
+    inset:0;
+    background:#00c853;
+    opacity:0;
+    pointer-events:none;
+}
+
+.flash.active{
+    animation:flash .5s;
+}
+
+@keyframes flash{
+    from{opacity:.8}
+    to{opacity:0}
+}
 </style>
 </head>
 <body>
@@ -32,140 +78,100 @@ font-size:16px;background:#444;color:white}
 <div id="status">Запуск камеры…</div>
 
 <div id="controls">
-<button id="photoBtn">Фото</button>
-<button id="torchBtn">Фонарик</button>
+    <button id="photoBtn">Скан с фото</button>
 </div>
 
 <div class="flash" id="flash"></div>
+
 <input type="file" accept="image/*" capture="environment" id="fileInput" hidden>
 
 <script>
-const tg=window.Telegram.WebApp;
+const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 tg.enableClosingConfirmation();
 
-const reader=new Html5Qrcode("reader");
-const statusEl=document.getElementById("status");
-const flash=document.getElementById("flash");
+const reader = new Html5Qrcode("reader");
+const statusEl = document.getElementById("status");
+const flash = document.getElementById("flash");
+let locked = false;
 
-let locked=false;
-let torchOn=false;
-
-// ---------- запуск ----------
+// ---------- запуск камеры ----------
 async function startScanner(){
-const devices = await Html5Qrcode.getCameras();
-    if (!devices || devices.length === 0) {
-        statusEl.innerText = "Камеры не найдены";
-        return;
+    try{
+        const cams = await Html5Qrcode.getCameras();
+        if(!cams.length) throw "no camera";
+
+        await reader.start(
+            { facingMode:{ exact:"environment" } },
+            {
+                fps:15,
+                qrbox:{ width:300,height:160 },
+                aspectRatio:1.8,
+                formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ]
+            },
+            onScan
+        );
+
+        statusEl.innerText="Наведите камеру на штрих-код";
     }
-// Выбираем камеру с index 0 (или по id)
-const cameraId = devices[0].id; // <-- камера 0
-try{
-await reader.start(
-  {
-    facingMode: "environment",
-    width:  { ideal: 1280 },
-    height: { ideal: 720 },
-    zoom:   { ideal: 1.4 }
-  },
-  {
-    fps: 8,
-    qrbox: { width: 260, height: 160 },
-  },
-  detectCandidate
-);
-
-statusEl.innerText="Наведите камеру на штрих-код";
-
-setTimeout(enableEnhancements,400);
-
-}catch(e){
-console.log(e);
-statusEl.innerText="Нет доступа к камере";
-}
+    catch(e){
+        console.log(e);
+        statusEl.innerText="Нет доступа к камере. Используйте фото.";
+    }
 }
 
-// ---------- улучшение камеры ----------
-async function enableEnhancements(){
-try{
-const track=reader.getRunningTrack();
-if(!track)return;
-
-const caps=track.getCapabilities?.();
-if(!caps)return;
-
-let adv={};
-
-if(caps.focusMode) adv.focusMode="continuous";
-if(caps.zoom) adv.zoom=Math.min(2,caps.zoom.max);
-
-await track.applyConstraints({advanced:[adv]});
-}catch(e){console.log("enhance skip",e);}
-}
-
-// ---------- найден ----------
+// ---------- успешное сканирование ----------
 async function onScan(text){
-if(locked)return;
-locked=true;
+    if(locked) return;
+    locked=true;
 
-try{await reader.stop();}catch{}
+    try{ await reader.stop(); }catch{}
 
-flash.classList.add("active");
-setTimeout(()=>flash.classList.remove("active"),500);
+    flash.classList.add("active");
+    setTimeout(()=>flash.classList.remove("active"),500);
 
-statusEl.innerText="Найден код: "+text;
+    statusEl.innerText="Найден код: "+text;
 
-tg.MainButton.setText("Отправить: "+text);
-tg.MainButton.show();
+    tg.MainButton.setText("Отправить: "+text);
+    tg.MainButton.show();
 
-window.result=text;
+    window.result=text;
 }
 
 // ---------- отправка ----------
 tg.MainButton.onClick(()=>{
-if(window.result){
-tg.sendData(window.result);
-tg.close();
-}});
+    if(window.result){
+        tg.sendData(window.result);
+        tg.close();
+    }
+});
 tg.MainButton.hide();
 
 // ---------- фото fallback ----------
-photoBtn.onclick=async()=>{
-try{await reader.stop();}catch{}
-fileInput.click();
+document.getElementById("photoBtn").onclick=async()=>{
+    try{ await reader.stop(); }catch{}
+    document.getElementById("fileInput").click();
 };
 
-fileInput.onchange=async e=>{
-const file=e.target.files[0];
-if(!file)return;
+document.getElementById("fileInput").onchange=async e=>{
+    const file=e.target.files[0];
+    if(!file) return;
 
-statusEl.innerText="Распознаю фото...";
-try{
-const res=await reader.scanFile(file,true);
-onScan(res.decodedText);
-}catch{
-statusEl.innerText="Код не найден";
-locked=false;
-}
-};
-
-// ---------- фонарик ----------
-torchBtn.onclick=async()=>{
-try{
-const track=reader.getRunningTrack();
-torchOn=!torchOn;
-await track.applyConstraints({advanced:[{torch:torchOn}]});
-}catch{
-statusEl.innerText="Фонарик не поддерживается";
-}
+    statusEl.innerText="Распознаю...";
+    try{
+        const res=await reader.scanFile(file,true);
+        onScan(res.decodedText);
+    }
+    catch{
+        statusEl.innerText="Код не найден. Попробуйте другое фото.";
+        locked=false;
+    }
 };
 
 // ---------- старт ----------
-setTimeout(startScanner,300);
+setTimeout(startScanner,400);
 </script>
+
 </body>
 </html>
-
-
-
