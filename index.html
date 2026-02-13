@@ -20,56 +20,42 @@
         }
         #reader {
             width: 100%;
-            height: 100%;
             flex: 1;
-        }
-        #reader video {
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: cover;
+            max-width: 500px;
+            margin: 0 auto;
         }
         #status {
             position: absolute;
-            top: 20px;
-            left: 10px;
-            right: 10px;
+            bottom: 140px;
+            left: 0;
+            right: 0;
             text-align: center;
-            padding: 12px 16px;
-            background: rgba(0,0,0,0.6);
-            border-radius: 12px;
+            padding: 12px;
+            background: rgba(0,0,0,0.65);
             font-size: 16px;
-            z-index: 20;
-            backdrop-filter: blur(4px);
+            z-index: 10;
         }
         #controls {
             position: absolute;
-            bottom: 30px;
+            bottom: 20px;
             left: 0;
             right: 0;
-            display: flex;
-            justify-content: center;
-            gap: 16px;
-            z-index: 20;
-            flex-wrap: wrap;
+            text-align: center;
+            z-index: 10;
         }
         button {
-            padding: 16px 32px;
-            font-size: 18px;
+            padding: 14px 28px;
+            font-size: 17px;
             background: #0088cc;
             color: white;
             border: none;
             border-radius: 12px;
+            margin: 8px;
             cursor: pointer;
             touch-action: manipulation;
-            min-width: 140px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
         }
         button:disabled {
             opacity: 0.5;
-            cursor: not-allowed;
-        }
-        button.torch-active {
-            background: #ff9500;
         }
     </style>
 </head>
@@ -79,7 +65,7 @@
     <div id="status">Открытие камеры...</div>
     <div id="controls">
         <button id="galleryBtn">Из галереи</button>
-        <button id="torchBtn">Фонарик вкл</button>
+        <button id="torchBtn" style="display:none;">Фонарик вкл</button>
         <button id="stopBtn" style="display:none;">Остановить</button>
     </div>
 
@@ -91,15 +77,16 @@
         const html5QrCode = new Html5Qrcode("reader");
         const status = document.getElementById("status");
         let scanning = false;
-        let torchSupported = false;
         let torchOn = false;
 
         const config = {
             fps: 12,
             qrbox: { width: 280, height: 280 },
-            aspectRatio: window.innerWidth / window.innerHeight,
+            aspectRatio: 4 / 3,
             disableFlip: false,
-            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+            experimentalFeatures: {
+                useBarCodeDetectorIfSupported: true
+            },
             formatsToSupport: [
                 Html5QrcodeSupportedFormats.QR_CODE,
                 Html5QrcodeSupportedFormats.EAN_13,
@@ -120,23 +107,39 @@
         }
 
         function onScanFailure(errorMessage) {
+            // Игнорируем обычные "не найдено"
             if (errorMessage?.includes?.("No MultiFormat Readers")) return;
+            // console.debug(errorMessage);
         }
 
         async function getBestBackCamera() {
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
                 if (videoDevices.length === 0) return null;
 
+                // Предпочтение: основной задний сенсор
                 const backCameras = videoDevices.filter(d =>
-                    !d.label.toLowerCase().includes('front')
+                    !d.label.toLowerCase().includes('front') &&
+                    (d.label.toLowerCase().includes('back') ||
+                     d.label.toLowerCase().includes('rear') ||
+                     d.label.toLowerCase().includes('main') ||
+                     d.label.toLowerCase().includes('0') ||
+                     d.label.toLowerCase().includes('environment'))
                 );
 
+                // Если нет явных "back" — берём первую не фронтальную
+                if (backCameras.length === 0) {
+                    return videoDevices.find(d => !d.label.toLowerCase().includes('front'))?.deviceId || null;
+                }
+
+                // Сортируем: приоритет тем, у кого в названии "0", "main", "back"
                 backCameras.sort((a, b) => {
                     const getScore = label => {
                         let score = 0;
-                        if (/0|main|back|rear/i.test(label)) score += 10;
+                        if (label.includes('0') || label.includes('main')) score += 10;
+                        if (label.includes('back') || label.includes('rear')) score += 5;
                         return score;
                     };
                     return getScore(b.label) - getScore(a.label);
@@ -144,41 +147,48 @@
 
                 return backCameras[0]?.deviceId || null;
             } catch (err) {
-                console.error("Ошибка камер:", err);
+                console.error("Ошибка получения списка камер:", err);
                 return null;
             }
         }
 
         async function startScanning() {
-            status.innerText = "Запускаем камеру...";
+            status.innerText = "Пытаемся открыть основную камеру...";
 
             let constraints = { facingMode: { ideal: "environment" } };
+
             const deviceId = await getBestBackCamera();
-            if (deviceId) constraints = { deviceId: { exact: deviceId } };
+            if (deviceId) {
+                constraints = { deviceId: { exact: deviceId } };
+                status.innerText = "Запущена основная задняя камера";
+            }
 
             try {
-                await html5QrCode.start(constraints, config, onScanSuccess, onScanFailure);
-                scanning = true;
-                status.innerText = "Наведите на код";
-                document.getElementById("stopBtn").style.display = "block";
+                await html5QrCode.start(
+                    constraints,
+                    config,
+                    onScanSuccess,
+                    onScanFailure
+                );
 
-                // Проверяем поддержку torch (без авто-включения)
-                try {
-                    await html5QrCode.applyVideoConstraints({ advanced: [{ torch: true }] });
-                    torchSupported = true;
-                    document.getElementById("torchBtn").style.display = "block";
-                    // Сразу выключаем, если не нужно по умолчанию
-                    await html5QrCode.applyVideoConstraints({ advanced: [{ torch: false }] });
-                    torchOn = false;
-                } catch (e) {
-                    console.warn("Torch не поддерживается:", e);
-                    torchSupported = false;
+                scanning = true;
+                status.innerText = "Наведите на штрих-код / QR";
+                document.getElementById("stopBtn").style.display = "inline-block";
+                document.getElementById("torchBtn").style.display = "inline-block";
+
+                // Пробуем включить фонарик автоматически (если поддерживается)
+                html5QrCode.applyTorch(true).then(() => {
+                    torchOn = true;
+                    document.getElementById("torchBtn").innerText = "Фонарик выкл";
+                }).catch(() => {
+                    // Фонарик не поддерживается — скрываем кнопку
                     document.getElementById("torchBtn").style.display = "none";
-                }
+                });
 
             } catch (err) {
-                console.error("Ошибка запуска:", err);
-                status.innerText = "Камера не открылась → используйте галерею";
+                console.error("Ошибка запуска сканирования:", err);
+                status.innerText = "Не удалось открыть камеру. Используйте «Из галереи»";
+                document.getElementById("torchBtn").style.display = "none";
             }
         }
 
@@ -189,49 +199,51 @@
                     torchOn = false;
                     status.innerText = "Сканирование остановлено";
                     document.getElementById("stopBtn").style.display = "none";
-                    document.getElementById("torchBtn").classList.remove("torch-active");
+                    document.getElementById("torchBtn").style.display = "none";
                     html5QrCode.clear();
-                });
+                }).catch(err => console.error("Ошибка остановки:", err));
             }
         }
 
-        // Кнопки
+        // ─── Обработчики кнопок ──────────────────────────────────────
+
         document.getElementById("galleryBtn").onclick = async () => {
             stopScanning();
-            status.innerText = "Выберите фото";
+            status.innerText = "Выберите фото со штрих-кодом";
+
             const input = document.createElement("input");
             input.type = "file";
             input.accept = "image/*";
             input.click();
+
             input.onchange = async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+
+                status.innerText = "Распознаю...";
                 try {
-                    const result = await html5QrCode.scanFile(file, true);
+                    const result = await html5QrCode.scanFile(file, /* returnDetailedScanResult */ true);
                     onScanSuccess(result.decodedText, result);
                 } catch (err) {
-                    status.innerText = "Не распознан код на фото";
+                    status.innerText = "Не удалось распознать код на фото";
+                    console.error(err);
                 }
             };
         };
 
         document.getElementById("stopBtn").onclick = stopScanning;
 
-        document.getElementById("torchBtn").onclick = async () => {
-            if (!torchSupported) return;
+        document.getElementById("torchBtn").onclick = () => {
             torchOn = !torchOn;
-            try {
-                await html5QrCode.applyVideoConstraints({ advanced: [{ torch: torchOn }] });
-                document.getElementById("torchBtn").innerText = torchOn ? "Фонарик выкл" : "Фонарик вкл";
-                document.getElementById("torchBtn").classList.toggle("torch-active", torchOn);
-            } catch (err) {
-                status.innerText = "Фонарик не работает на этом устройстве";
-                console.error(err);
-            }
+            html5QrCode.applyTorch(torchOn);
+            document.getElementById("torchBtn").innerText = torchOn ? "Фонарик выкл" : "Фонарик вкл";
         };
 
-        // Запуск
+        // ─── Запуск при загрузке ─────────────────────────────────────
+
         startScanning();
+
+        // ─── Отправка результата в бота ──────────────────────────────
 
         tg.MainButton.onClick(() => {
             if (window.scannedCode) {
