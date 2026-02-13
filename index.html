@@ -111,7 +111,7 @@ async function startScanner(){
                 formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ],
                 // ← Вот здесь добавляем
                 videoConstraints: {
-                  facingMode: { exact: "environment" }?
+                  facingMode: { exact: "environment" },
                   focusMode: "continuous"   // основной параметр для автофокуса
                   // можно сразу добавить zoom, если нужно
                   // advanced: [{ zoom: 1.5 }]
@@ -182,3 +182,4 @@ setTimeout(startScanner,400);
 
 </body>
 </html>
+
