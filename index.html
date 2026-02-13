@@ -86,6 +86,28 @@ button{
 <input type="file" accept="image/*" capture="environment" id="fileInput" hidden>
 
 <script>
+
+// Включаем Eruda — мини-консоль прямо в приложении
+    if (location.hostname === "localhost" || 
+        location.search.includes("debug") || 
+        window.Telegram?.WebApp?.initDataUnsafe?.user?.id === ТВОЙ_TELEGRAM_ID) {
+        
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/eruda";
+        document.head.appendChild(script);
+        
+        script.onload = function () {
+            eruda.init({
+                defaults: {
+                    displaySize: 60,
+                    transparency: 0.9,
+                    tool: ["console", "elements", "network", "info"]
+                }
+            });
+            console.log("Eruda загружен → ищи иконку в правом нижнем углу");
+        };
+    }
+
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
@@ -182,4 +204,3 @@ setTimeout(startScanner,400);
 
 </body>
 </html>
-
