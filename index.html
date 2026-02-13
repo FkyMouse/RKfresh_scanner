@@ -110,9 +110,6 @@ async function startScanner(){
                 aspectRatio:1.8,
                 formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ]
             },
-            experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true     // критично важно в 2025+
-                            },
             onScan
         );
 
@@ -178,3 +175,4 @@ setTimeout(startScanner,400);
 
 </body>
 </html>
+
