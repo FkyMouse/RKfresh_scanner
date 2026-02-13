@@ -99,11 +99,8 @@ let locked = false;
 // ---------- запуск камеры ----------
 async function startScanner(){
     try{
-        const cams = await Html5Qrcode.getCameras();
-        if(!cams.length) throw "no camera";
-
         await reader.start(
-            { facingMode:{ exact:"environment" } },
+            { facingMode:"environment" },
             {
                 fps:15,
                 qrbox:{ width:300,height:160 },
@@ -120,7 +117,6 @@ async function startScanner(){
         statusEl.innerText="Нет доступа к камере. Используйте фото.";
     }
 }
-
 // ---------- успешное сканирование ----------
 async function onScan(text){
     if(locked) return;
@@ -175,3 +171,4 @@ setTimeout(startScanner,400);
 
 </body>
 </html>
+
