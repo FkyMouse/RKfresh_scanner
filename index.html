@@ -103,7 +103,7 @@ async function startScanner(){
         if(!cams.length) throw "no camera";
 
         await reader.start(
-            { facingMode:{ exact:"environment" } },
+            { facingMode:{ "environment" } },
             {
                 fps:15,
                 qrbox:{ width:300,height:160 },
