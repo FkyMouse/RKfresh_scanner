@@ -3,74 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>EAN13 Scanner PRO</title>
+<title>EAN13 Scanner</title>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
 <style>
-body{
-    margin:0;
-    background:#000;
-    color:#fff;
-    font-family:system-ui;
-    overflow:hidden;
-}
-
-#reader{
-    position:fixed;
-    inset:0;
-}
-
+body{margin:0;background:#000;color:#fff;font-family:system-ui;overflow:hidden}
+#reader{position:fixed;inset:0}
 #status{
-    position:fixed;
-    top:15px;
-    left:10px;
-    right:10px;
-    text-align:center;
-    padding:14px;
-    border-radius:16px;
-    background:rgba(0,0,0,.65);
-    backdrop-filter:blur(6px);
-    font-size:17px;
-    z-index:10;
-}
-
+position:fixed;top:15px;left:10px;right:10px;text-align:center;
+padding:14px;border-radius:16px;background:rgba(0,0,0,.65);
+backdrop-filter:blur(6px);font-size:17px;z-index:10}
 #controls{
-    position:fixed;
-    bottom:30px;
-    width:100%;
-    display:flex;
-    justify-content:center;
-    gap:12px;
-    z-index:10;
-}
-
+position:fixed;bottom:30px;width:100%;display:flex;
+justify-content:center;gap:12px;z-index:10}
 button{
-    padding:14px 22px;
-    border:none;
-    border-radius:14px;
-    font-size:16px;
-    background:#444;
-    color:white;
-}
-
-.flash{
-    position:fixed;
-    inset:0;
-    background:#00c853;
-    opacity:0;
-    pointer-events:none;
-}
-
-.flash.active{
-    animation:flash .5s;
-}
-
-@keyframes flash{
-    from{opacity:.85}
-    to{opacity:0}
-}
+padding:14px 22px;border:none;border-radius:14px;
+font-size:16px;background:#444;color:white}
+.flash{position:fixed;inset:0;background:#00c853;opacity:0;pointer-events:none}
+.flash.active{animation:flash .5s}
+@keyframes flash{from{opacity:.85}to{opacity:0}}
 </style>
 </head>
 <body>
@@ -84,110 +37,117 @@ button{
 </div>
 
 <div class="flash" id="flash"></div>
-
 <input type="file" accept="image/*" capture="environment" id="fileInput" hidden>
 
 <script>
 const tg=window.Telegram.WebApp;
-tg.ready(); tg.expand();
+tg.ready();
+tg.expand();
+tg.enableClosingConfirmation();
 
 const reader=new Html5Qrcode("reader");
 const statusEl=document.getElementById("status");
+const flash=document.getElementById("flash");
 
-let scanning=true;
 let locked=false;
+let torchOn=false;
 
-// ---------- старт камеры ----------
-async function start(){
-await reader.start(
-  {
-    facingMode: "environment",
-    width:  { ideal: 1280 },
-    height: { ideal: 720 },
-    zoom:   { ideal: 1.4 }
-  },
-  {
-    fps: 8,
-    qrbox: { width: 260, height: 160 },
-  },
-  detectCandidate
-);
-
-// ---------- быстрый детектор ----------
-function detectCandidate(text,result){
-if(locked) return;
-if(!result.resultPoints) return;
-
-// найден кандидат — делаем HD snapshot
-captureAndDecode();
-}
-
-// ---------- делаем снимок ----------
-async function captureAndDecode(){
-locked=true;
-statusEl.innerText="Сканирую…";
-
-const track=reader.getRunningTrack();
-const imageCapture=new ImageCapture(track);
-const bitmap=await imageCapture.grabFrame();
-
-const canvas=document.createElement("canvas");
-canvas.width=bitmap.width;
-canvas.height=bitmap.height;
-const ctx=canvas.getContext("2d");
-ctx.drawImage(bitmap,0,0);
-
-// ---------- улучшение изображения ----------
-let img=ctx.getImageData(0,0,canvas.width,canvas.height);
-let d=img.data;
-
-for(let i=0;i<d.length;i+=4){
-let gray=d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11;
-
-// контраст
-gray=gray>140?255:0;
-
-d[i]=d[i+1]=d[i+2]=gray;
-}
-ctx.putImageData(img,0,0);
-
-// ---------- decode улучшенного кадра ----------
+// ---------- запуск ----------
+async function startScanner(){
 try{
-const res=await reader.scanFile(
-await new Promise(r=>canvas.toBlob(r,"image/png")),
-true);
+await reader.start(
+{facingMode:"environment"},
+{fps:12,qrbox:{width:300,height:150},
+formatsToSupport:[Html5QrcodeSupportedFormats.EAN_13]},
+onScan);
 
-success(res.decodedText);
-}
-catch{
-locked=false;
-statusEl.innerText="Не удалось. Наведите снова";
+statusEl.innerText="Наведите камеру на штрих-код";
+
+setTimeout(enableEnhancements,400);
+
+}catch(e){
+console.log(e);
+statusEl.innerText="Нет доступа к камере";
 }
 }
 
-// ---------- успех ----------
-async function success(code){
-await reader.stop();
-statusEl.innerText="Код: "+code;
+// ---------- улучшение камеры ----------
+async function enableEnhancements(){
+try{
+const track=reader.getRunningTrack();
+if(!track)return;
 
-tg.MainButton.setText("Отправить "+code);
+const caps=track.getCapabilities?.();
+if(!caps)return;
+
+let adv={};
+
+if(caps.focusMode) adv.focusMode="continuous";
+if(caps.zoom) adv.zoom=Math.min(2,caps.zoom.max);
+
+await track.applyConstraints({advanced:[adv]});
+}catch(e){console.log("enhance skip",e);}
+}
+
+// ---------- найден ----------
+async function onScan(text){
+if(locked)return;
+locked=true;
+
+try{await reader.stop();}catch{}
+
+flash.classList.add("active");
+setTimeout(()=>flash.classList.remove("active"),500);
+
+statusEl.innerText="Найден код: "+text;
+
+tg.MainButton.setText("Отправить: "+text);
 tg.MainButton.show();
-window.result=code;
+
+window.result=text;
 }
 
 // ---------- отправка ----------
 tg.MainButton.onClick(()=>{
+if(window.result){
 tg.sendData(window.result);
 tg.close();
-});
+}});
 tg.MainButton.hide();
 
-start();
+// ---------- фото fallback ----------
+photoBtn.onclick=async()=>{
+try{await reader.stop();}catch{}
+fileInput.click();
+};
+
+fileInput.onchange=async e=>{
+const file=e.target.files[0];
+if(!file)return;
+
+statusEl.innerText="Распознаю фото...";
+try{
+const res=await reader.scanFile(file,true);
+onScan(res.decodedText);
+}catch{
+statusEl.innerText="Код не найден";
+locked=false;
+}
+};
+
+// ---------- фонарик ----------
+torchBtn.onclick=async()=>{
+try{
+const track=reader.getRunningTrack();
+torchOn=!torchOn;
+await track.applyConstraints({advanced:[{torch:torchOn}]});
+}catch{
+statusEl.innerText="Фонарик не поддерживается";
+}
+};
+
+// ---------- старт ----------
+setTimeout(startScanner,300);
 </script>
-
-
 </body>
 </html>
-
-
-
