@@ -87,25 +87,6 @@ button{
 
 <script>
 
-// Включаем Eruda — мини-консоль прямо в приложении
-    if (true) {
-        
-        const script = document.createElement("script");
-        script.src = "https://cdn.jsdelivr.net/npm/eruda";
-        document.head.appendChild(script);
-        
-        script.onload = function () {
-            eruda.init({
-                defaults: {
-                    displaySize: 60,
-                    transparency: 0.9,
-                    tool: ["console", "elements", "network", "info"]
-                }
-            });
-            console.log("Eruda загружен → ищи иконку в правом нижнем углу");
-        };
-    }
-
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
@@ -123,19 +104,12 @@ async function startScanner(){
         if(!cams.length) throw "no camera";
 
         await reader.start(
-            {} },
+            {facingMode: { exact: "environment" }},
             {
                 fps:15,
                 qrbox:{ width:300,height:160 },
                 aspectRatio:1.8,
-                formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ],
-                // ← Вот здесь добавляем
-                videoConstraints: {
-                  facingMode: { exact: "environment" },
-                  focusMode: "continuous"   // основной параметр для автофокуса
-                  // можно сразу добавить zoom, если нужно
-                  // advanced: [{ zoom: 1.5 }]
-                }
+                formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ]
             },
             onScan
         );
@@ -202,5 +176,3 @@ setTimeout(startScanner,400);
 
 </body>
 </html>
-
-
