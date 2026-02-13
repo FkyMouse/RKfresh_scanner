@@ -54,9 +54,17 @@ let torchOn=false;
 
 // ---------- запуск ----------
 async function startScanner(){
+const devices = await Html5Qrcode.getCameras();
+    if (!devices || devices.length === 0) {
+        statusEl.innerText = "Камеры не найдены";
+        return;
+    }
+// Выбираем камеру с index 0 (или по id)
+const cameraId = devices[0].id; // <-- камера 0
 try{
 await reader.start(
-{facingMode:"environment"},
+//{facingMode:"environment"},
+{cameraId},
 {fps:12,qrbox:{width:300,height:150},
 formatsToSupport:[Html5QrcodeSupportedFormats.EAN_13]},
 onScan);
@@ -151,3 +159,4 @@ setTimeout(startScanner,300);
 </script>
 </body>
 </html>
+
