@@ -1,180 +1,177 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Сканер штрих-кода / QR</title>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: system-ui, -apple-system, sans-serif;
-            background: #000;
-            color: #fff;
-            height: 100vh;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-        }
-        #reader {
-            width: 100%;
-            height: 100%;
-            flex: 1;
-            position: relative;
-        }
-        #status {
-            position: absolute;
-            top: 20px;
-            left: 10px;
-            right: 10px;
-            text-align: center;
-            padding: 16px;
-            background: rgba(0,0,0,0.7);
-            border-radius: 16px;
-            font-size: 17px;
-            z-index: 20;
-            backdrop-filter: blur(6px);
-        }
-        #controls {
-            position: absolute;
-            bottom: 40px;
-            left: 0;
-            right: 0;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            z-index: 20;
-            flex-wrap: wrap;
-        }
-        button {
-            padding: 16px 36px;
-            font-size: 18px;
-            background: #0088cc;
-            color: white;
-            border: none;
-            border-radius: 14px;
-            cursor: pointer;
-            min-width: 160px;
-            box-shadow: 0 6px 16px rgba(0,0,0,0.5);
-            touch-action: manipulation;
-        }
-        button.gallery {
-            background: #555;
-        }
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1, user-scalable=no">
+<title>EAN13 Scanner</title>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+body{
+    margin:0;
+    background:#000;
+    color:#fff;
+    font-family:system-ui;
+    overflow:hidden;
+}
+
+#reader{
+    position:fixed;
+    inset:0;
+}
+
+#status{
+    position:fixed;
+    top:15px;
+    left:10px;
+    right:10px;
+    text-align:center;
+    padding:14px;
+    border-radius:16px;
+    background:rgba(0,0,0,.65);
+    backdrop-filter:blur(6px);
+    font-size:17px;
+    z-index:10;
+}
+
+#controls{
+    position:fixed;
+    bottom:35px;
+    width:100%;
+    display:flex;
+    justify-content:center;
+    z-index:10;
+}
+
+button{
+    padding:15px 28px;
+    border:none;
+    border-radius:14px;
+    font-size:17px;
+    background:#444;
+    color:white;
+}
+
+.flash{
+    position:fixed;
+    inset:0;
+    background:#00c853;
+    opacity:0;
+    pointer-events:none;
+}
+
+.flash.active{
+    animation:flash .5s;
+}
+
+@keyframes flash{
+    from{opacity:.8}
+    to{opacity:0}
+}
+</style>
 </head>
 <body>
 
-    <div id="reader"></div>
+<div id="reader"></div>
+<div id="status">Запуск камеры…</div>
 
-    <div id="status">Открываем камеру...</div>
+<div id="controls">
+    <button id="photoBtn">Скан с фото</button>
+</div>
 
-    <div id="controls">
-        <button id="openCameraBtn">Сделать фото камерой</button>
-        <button id="galleryBtn" class="gallery">Из галереи (запасной)</button>
-    </div>
+<div class="flash" id="flash"></div>
 
-    <!-- Скрытый input для камеры -->
-    <input 
-        type="file" 
-        accept="image/*" 
-        capture="environment" 
-        id="cameraInput" 
-        style="display: none;"
-    />
+<input type="file" accept="image/*" capture="environment" id="fileInput" hidden>
 
-    <!-- Скрытый input для галереи (без capture) -->
-    <input 
-        type="file" 
-        accept="image/*" 
-        id="galleryInput" 
-        style="display: none;"
-    />
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+tg.enableClosingConfirmation();
 
-    <script>
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
+const reader = new Html5Qrcode("reader");
+const statusEl = document.getElementById("status");
+const flash = document.getElementById("flash");
+let locked = false;
 
-        const html5QrCode = new Html5Qrcode("reader");
-        const status = document.getElementById("status");
-        let processing = false;
+// ---------- запуск камеры ----------
+async function startScanner(){
+    try{
+        const cams = await Html5Qrcode.getCameras();
+        if(!cams.length) throw "no camera";
 
-        // ─── Основная функция обработки файла ────────────────────────────────────────
-        async function processImage(file) {
-            if (!file || processing) return;
-            processing = true;
-            status.innerText = "Распознаю код...";
+        await reader.start(
+            { facingMode:{ exact:"environment" } },
+            {
+                fps:15,
+                qrbox:{ width:300,height:160 },
+                aspectRatio:1.8,
+                formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ]
+            },
+            onScan
+        );
 
-            try {
-                const result = await html5QrCode.scanFile(file, true);
-                const code = result.decodedText;
+        statusEl.innerText="Наведите камеру на штрих-код";
+    }
+    catch(e){
+        console.log(e);
+        statusEl.innerText="Нет доступа к камере. Используйте фото.";
+    }
+}
 
-                status.innerText = `Найден: ${code}`;
-                tg.MainButton.setText(`Отправить: ${code}`);
-                tg.MainButton.show();
-                window.scannedCode = code;
+// ---------- успешное сканирование ----------
+async function onScan(text){
+    if(locked) return;
+    locked=true;
 
-                // Зелёная вспышка успеха (если есть оверлей — можно добавить класс)
-                document.body.style.background = "#0a3";
-                setTimeout(() => document.body.style.background = "#000", 800);
+    try{ await reader.stop(); }catch{}
 
-            } catch (err) {
-                console.error("Ошибка распознавания:", err);
-                status.innerText = "Не удалось распознать код.\nПопробуйте другое фото или лучшее освещение.";
-            } finally {
-                processing = false;
-                // Очищаем input
-                document.getElementById("cameraInput").value = "";
-                document.getElementById("galleryInput").value = "";
-            }
-        }
+    flash.classList.add("active");
+    setTimeout(()=>flash.classList.remove("active"),500);
 
-        // ─── Кнопка "Сделать фото камерой" ───────────────────────────────────────────
-        document.getElementById("openCameraBtn").addEventListener("click", () => {
-            status.innerText = "Открываем камеру...";
-            document.getElementById("cameraInput").click();
-        });
+    statusEl.innerText="Найден код: "+text;
 
-        document.getElementById("cameraInput").addEventListener("change", (e) => {
-            const file = e.target.files[0];
-            if (file) processImage(file);
-        });
+    tg.MainButton.setText("Отправить: "+text);
+    tg.MainButton.show();
 
-        // ─── Кнопка "Из галереи" (запасной вариант) ──────────────────────────────────
-        document.getElementById("galleryBtn").addEventListener("click", () => {
-            status.innerText = "Выберите фото из галереи...";
-            document.getElementById("galleryInput").click();
-        });
+    window.result=text;
+}
 
-        document.getElementById("galleryInput").addEventListener("change", (e) => {
-            const file = e.target.files[0];
-            if (file) processImage(file);
-        });
+// ---------- отправка ----------
+tg.MainButton.onClick(()=>{
+    if(window.result){
+        tg.sendData(window.result);
+        tg.close();
+    }
+});
+tg.MainButton.hide();
 
-        // ─── Автозапуск камеры при загрузке страницы ────────────────────────────────
-        setTimeout(() => {
-            document.getElementById("openCameraBtn").click();
-        }, 800);  // небольшая задержка, чтобы Telegram успел инициализироваться
+// ---------- фото fallback ----------
+document.getElementById("photoBtn").onclick=async()=>{
+    try{ await reader.stop(); }catch{}
+    document.getElementById("fileInput").click();
+};
 
-        // ─── Отправка результата в бота ──────────────────────────────────────────────
-        tg.MainButton.onClick(() => {
-            if (window.scannedCode) {
-                tg.sendData(window.scannedCode);
-                tg.close();
-            }
-        });
+document.getElementById("fileInput").onchange=async e=>{
+    const file=e.target.files[0];
+    if(!file) return;
 
-        // Показываем главную кнопку только после успешного сканирования
-        tg.MainButton.hide();
-    </script>
+    statusEl.innerText="Распознаю...";
+    try{
+        const res=await reader.scanFile(file,true);
+        onScan(res.decodedText);
+    }
+    catch{
+        statusEl.innerText="Код не найден. Попробуйте другое фото.";
+        locked=false;
+    }
+};
+
+// ---------- старт ----------
+setTimeout(startScanner,400);
+</script>
+
 </body>
 </html>
