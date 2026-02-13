@@ -2,8 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1, user-scalable=no">
-<title>EAN13 Scanner</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>EAN13 Scanner PRO</title>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -38,18 +38,19 @@ body{
 
 #controls{
     position:fixed;
-    bottom:35px;
+    bottom:30px;
     width:100%;
     display:flex;
     justify-content:center;
+    gap:12px;
     z-index:10;
 }
 
 button{
-    padding:15px 28px;
+    padding:14px 22px;
     border:none;
     border-radius:14px;
-    font-size:17px;
+    font-size:16px;
     background:#444;
     color:white;
 }
@@ -67,7 +68,7 @@ button{
 }
 
 @keyframes flash{
-    from{opacity:.8}
+    from{opacity:.85}
     to{opacity:0}
 }
 </style>
@@ -78,7 +79,8 @@ button{
 <div id="status">Запуск камеры…</div>
 
 <div id="controls">
-    <button id="photoBtn">Скан с фото</button>
+<button id="photoBtn">Фото</button>
+<button id="torchBtn">Фонарик</button>
 </div>
 
 <div class="flash" id="flash"></div>
@@ -94,30 +96,66 @@ tg.enableClosingConfirmation();
 const reader = new Html5Qrcode("reader");
 const statusEl = document.getElementById("status");
 const flash = document.getElementById("flash");
-let locked = false;
 
-// ---------- запуск камеры ----------
+let locked=false;
+let torchOn=false;
+
+// ---------- запуск камеры высокого качества ----------
 async function startScanner(){
     try{
+
         await reader.start(
-            { facingMode:"environment" },
             {
-                fps:15,
-                qrbox:{ width:1280,height:720 },
+                facingMode:"environment",
+                width:{ ideal:1920 },
+                height:{ ideal:1080 }
+            },
+            {
+                fps:10, // ниже fps = выше точность
+                qrbox:{ width:420, height:220 }, // большой скан-бокс
                 aspectRatio:1.8,
-                formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ]
+                disableFlip:true,
+                experimentalFeatures:{
+                    useBarCodeDetectorIfSupported:true
+                },
+                formatsToSupport:[
+                    Html5QrcodeSupportedFormats.EAN_13
+                ]
             },
             onScan
         );
 
         statusEl.innerText="Наведите камеру на штрих-код";
-    }
-    catch(e){
+
+        enableCameraEnhancements();
+
+    }catch(e){
         console.log(e);
         statusEl.innerText="Нет доступа к камере. Используйте фото.";
     }
 }
-// ---------- успешное сканирование ----------
+
+// ---------- улучшения камеры ----------
+async function enableCameraEnhancements(){
+    try{
+        const track = reader.getRunningTrack();
+        const caps = track.getCapabilities();
+
+        let settings={};
+
+        if(caps.focusMode)
+            settings.focusMode="continuous";
+
+        if(caps.zoom)
+            settings.zoom=Math.min(2, caps.zoom.max);
+
+        await track.applyConstraints({ advanced:[settings] });
+    }catch(e){
+        console.log("enhance fail",e);
+    }
+}
+
+// ---------- скан найден ----------
 async function onScan(text){
     if(locked) return;
     locked=true;
@@ -154,7 +192,7 @@ document.getElementById("fileInput").onchange=async e=>{
     const file=e.target.files[0];
     if(!file) return;
 
-    statusEl.innerText="Распознаю...";
+    statusEl.innerText="Распознаю фото...";
     try{
         const res=await reader.scanFile(file,true);
         onScan(res.decodedText);
@@ -165,11 +203,22 @@ document.getElementById("fileInput").onchange=async e=>{
     }
 };
 
+// ---------- фонарик ----------
+document.getElementById("torchBtn").onclick=async()=>{
+    try{
+        const track = reader.getRunningTrack();
+        torchOn=!torchOn;
+        await track.applyConstraints({
+            advanced:[{ torch: torchOn }]
+        });
+    }catch{
+        statusEl.innerText="Фонарик не поддерживается";
+    }
+};
+
 // ---------- старт ----------
-setTimeout(startScanner,400);
+setTimeout(startScanner,300);
 </script>
 
 </body>
 </html>
-
-
