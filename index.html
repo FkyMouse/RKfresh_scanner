@@ -81,7 +81,7 @@
 
         const config = {
             fps: 12,
-            qrbox: { width: 460, height: 280 },
+            qrbox: { width: 280, height: 280 },
             aspectRatio: 4 / 3,
             disableFlip: false,
             experimentalFeatures: {
@@ -97,21 +97,6 @@
                 Html5QrcodeSupportedFormats.CODE_39
             ]
         };
-
-                // В начале скрипта
-        window.addEventListener('beforeunload', () => {
-            // Попытка остановить поток, если есть
-            if (window.currentStream) {
-                window.currentStream.getTracks().forEach(track => track.stop());
-            }
-        });
-        
-        // При запуске всегда проверять enumerateDevices и логировать
-        async function logDevices() {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            console.log("Доступные устройства:", devices.map(d => `${d.kind}: ${d.label || 'без имени'} (${d.deviceId})`));
-        }
-        logDevices();
 
         function onScanSuccess(decodedText, decodedResult) {
             status.innerText = `Найден: ${decodedText}`;
@@ -269,5 +254,3 @@
     </script>
 </body>
 </html>
-
-
