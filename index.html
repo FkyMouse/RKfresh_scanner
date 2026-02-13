@@ -88,9 +88,7 @@ button{
 <script>
 
 // Включаем Eruda — мини-консоль прямо в приложении
-    if (location.hostname === "localhost" || 
-        location.search.includes("debug") || 
-        window.Telegram?.WebApp?.initDataUnsafe?.user?.id === 434152110) {
+    if (true) {
         
         const script = document.createElement("script");
         script.src = "https://cdn.jsdelivr.net/npm/eruda";
@@ -204,4 +202,5 @@ setTimeout(startScanner,400);
 
 </body>
 </html>
+
 
