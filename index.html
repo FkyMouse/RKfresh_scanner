@@ -115,12 +115,33 @@ async function getBestBackCamera() {
 
 // ---------- запуск камеры ----------
 async function startScanner(){
+    
+    // 1. Пытаемся открыть environment (iOS лучший способ)
+    try{
+        await reader.start(
+            { facingMode: { exact: "environment" } },
+            config,
+            onScan
+        );
+        return;
+    } catch(e){}
+    
+    // 2. Пытаемся просто environment
+    try{
+        await reader.start(
+            { facingMode: "environment" },
+            config,
+            onScan
+        );
+        return;
+    } catch(e){}
+    
     try{
         const cams = await Html5Qrcode.getCameras();
         if(!cams.length) throw "no camera";
         const deviceId = await getBestBackCamera();
         await reader.start(
-            { facingMode: { exact: "environment" } },
+            deviceId,
             {
                 fps:15,
                 qrbox:{ width:300,height:160 },
@@ -134,8 +155,8 @@ async function startScanner(){
     }
     catch(e){
         console.log(e);
-        statusEl.innerText="Нет доступа к камере. Используйте фото.";
-    }
+        }
+    statusEl.innerText="Нет доступа к камере. Используйте фото.";
 }
 
 // ---------- успешное сканирование ----------
