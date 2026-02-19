@@ -136,6 +136,7 @@ async function startScanner(){
             },
             onScan
         );
+        return;
     }
     catch(e){
     statusEl.innerText = e.message || e;
