@@ -112,13 +112,6 @@ async function getBestBackCamera() {
                 return null;
             }
         }
-        
-const config = {
-    fps: 15,
-    qrbox:{ width:300,height:160 },
-    aspectRatio:1.8,
-    formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ]
-};
 
 // ---------- запуск камеры ----------
 async function startScanner(){
@@ -136,42 +129,13 @@ async function startScanner(){
             },
             onScan
         );
-        return;
+
+        statusEl.innerText="Наведите камеру на штрих-код";
     }
     catch(e){
-    statusEl.innerText = e.message || e;
-}
-    
-    
-    // 1. Пытаемся открыть environment (iOS лучший способ)
-    try{
-        await reader.start(
-            { facingMode: { exact: "environment" } },
-            config,
-            onScan
-        );
-        return;
-    } 
-    catch(e){
-    statusEl.innerText = e.message || e;
-}
-
-    
-    // 2. Пытаемся просто environment
-    try{
-        await reader.start(
-            { facingMode: "environment" },
-            config,
-            onScan
-        );
-        return;
-    } 
-    catch(e){
-    statusEl.innerText = e.message || e;
-}
-
-    
-    statusEl.innerText="Нет доступа к камере. Используйте фото.";
+        console.log(e);
+        statusEl.innerText="Нет доступа к камере. Используйте фото.";
+    }
 }
 
 // ---------- успешное сканирование ----------
