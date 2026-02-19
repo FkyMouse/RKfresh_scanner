@@ -115,6 +115,26 @@ async function getBestBackCamera() {
 
 // ---------- запуск камеры ----------
 async function startScanner(){
+    try{
+        const cams = await Html5Qrcode.getCameras();
+        if(!cams.length) throw "no camera";
+        const deviceId = await getBestBackCamera();
+        await reader.start(
+            deviceId,
+            {
+                fps:15,
+                qrbox:{ width:300,height:160 },
+                aspectRatio:1.8,
+                formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ]
+            },
+            onScan
+        );
+
+        statusEl.innerText="Наведите камеру на штрих-код";
+    }
+    catch(e){
+        console.log(e);
+        }    
     
     // 1. Пытаемся открыть environment (iOS лучший способ)
     try{
@@ -136,16 +156,7 @@ async function startScanner(){
         return;
     } catch(e){}
     
-    // 3. Пытаемся deviceId (Android)
-    try{
-        const cams = await Html5Qrcode.getCameras();
-        if(cams.length){
-            await reader.start(cams[0].id, config, onScan);
-            return;
-        }
-    } catch(e){}
-
-    statusEl.innerText="Не удалось запустить камеру";
+    statusEl.innerText="Нет доступа к камере. Используйте фото.";
 }
 
 // ---------- успешное сканирование ----------
