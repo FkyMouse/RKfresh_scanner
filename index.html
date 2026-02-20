@@ -120,7 +120,7 @@ async function startScanner(){
         if(!cams.length) throw "no camera";
         const deviceId = await getBestBackCamera();
         await reader.start(
-            deviceId,
+            {facingMode: { exact: deviceId }},
             {
                 fps:15,
                 qrbox:{ width:300,height:160 },
