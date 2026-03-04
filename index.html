@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>QR / Камера — Telegram Web App</title>
+  <title>Сканер QR / Штрихкод — Telegram</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
   <style>
@@ -27,35 +27,37 @@
       position: fixed; top: 16px; left: 16px; right: 16px;
       text-align: center; background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
       padding: 12px 16px; border-radius: 16px; font-size: 17px; z-index: 20;
-      pointer-events: none;
+      pointer-events: none; line-height: 1.4;
     }
     #controls {
-      position: fixed; bottom: 90px; left: 0; right: 0;
+      position: fixed; bottom: 100px; left: 0; right: 0;
       display: flex; justify-content: center; gap: 16px; padding: 0 20px;
       z-index: 20; flex-wrap: wrap;
     }
-    #main-btn-container { position: fixed; bottom: 16px; left: 0; right: 0; padding: 0 20px; z-index: 25; }
+    #main-btn-container {
+      position: fixed; bottom: 16px; left: 0; right: 0; padding: 0 20px; z-index: 25;
+    }
     button {
       padding: 14px 28px; font-size: 17px; border: none; border-radius: 12px;
-      color: white; background: #333; cursor: pointer; transition: background 0.2s;
+      color: white; background: #333; cursor: pointer; transition: all 0.2s;
     }
     button:hover, button:active { background: #555; }
     button.primary { background: var(--tg-theme-button-color); }
     button.primary:hover, button.primary:active { background: #1a6eb3; }
-    .flash { position: fixed; inset: 0; background: #00c853; opacity: 0; pointer-events: none; z-index: 15; transition: opacity 0.4s; }
-    .flash.active { opacity: 0.7; }
+    .flash { position: fixed; inset: 0; background: #00c853; opacity: 0; pointer-events: none; z-index: 15; transition: opacity 0.5s; }
+    .flash.active { opacity: 0.6; }
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
 
   <div id="reader"></div>
-  <div id="status">Запуск камеры…</div>
+  <div id="status">Подготовка…</div>
 
   <div id="controls">
     <button id="btnFront">Фронтальная</button>
-    <button id="btnBack" class="primary">Задняя</button>
-    <button id="btnStop">Выключить</button>
+    <button id="btnBack" class="primary">Задняя (основная)</button>
+    <button id="btnStop" class="hidden">Выключить</button>
   </div>
 
   <div id="main-btn-container" class="hidden">
@@ -72,38 +74,28 @@
     tg.expand();
     tg.enableClosingConfirmation();
 
-    const statusEl = document.getElementById("status");
-    const flashEl  = document.getElementById("flash");
-    const btnFront = document.getElementById("btnFront");
-    const btnBack  = document.getElementById("btnBack");
-    const btnStop  = document.getElementById("btnStop");
+    const statusEl        = document.getElementById("status");
+    const flashEl         = document.getElementById("flash");
+    const btnFront        = document.getElementById("btnFront");
+    const btnBack         = document.getElementById("btnBack");
+    const btnStop         = document.getElementById("btnStop");
     const mainBtnContainer = document.getElementById("main-btn-container");
-    const mainActionBtn    = document.getElementById("mainActionBtn");
+    const mainActionBtn   = document.getElementById("mainActionBtn");
 
     let scanner = null;
     let lastResult = null;
-    let isDestroyed = false;   // флаг, что сканер полностью уничтожен
 
-    // ────────────────────────────────────────────────
-    //  Вспомогательные
-    // ────────────────────────────────────────────────
+    // ─── Helpers ────────────────────────────────────────
     function flash() {
       flashEl.classList.add("active");
-      setTimeout(() => flashEl.classList.remove("active"), 400);
+      setTimeout(() => flashEl.classList.remove("active"), 500);
     }
 
-    async function forceReleaseCamera() {
+    async function releaseCamera() {
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(d => d.kind === "videoinput");
-        if (videoDevices.length === 0) return;
-
-        // Пытаемся запросить пустой поток → это помогает "отпустить" камеру на iOS
-        const dummyStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        dummyStream.getTracks().forEach(t => t.stop());
-      } catch (e) {
-        // silent — нормально, если нет доступа
-      }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(t => t.stop());
+      } catch {}
     }
 
     async function destroyScanner() {
@@ -112,48 +104,44 @@
         try { scanner.clear(); } catch {}
         scanner = null;
       }
-      await forceReleaseCamera();
-      isDestroyed = true;
+      await releaseCamera();
+      lastResult = null;
       statusEl.textContent = "Камера выключена";
       btnStop.classList.add("hidden");
       mainBtnContainer.classList.add("hidden");
+      tg.MainButton.hide();
     }
 
-    async function initAndStartScanner(facingMode = "environment") {
-      await destroyScanner();           // всегда чистим перед новым запуском
+    // ─── Main scanner start logic ───────────────────────
+    async function startScanner(facingMode = "environment") {
+      await destroyScanner();
 
-      statusEl.textContent = `Запуск ${facingMode === "user" ? "фронтальной" : "задней"} камеры…`;
+      const isFront = facingMode === "user";
+      statusEl.textContent = `Запуск ${isFront ? "фронтальной" : "задней"} камеры…`;
 
       try {
         scanner = new Html5Qrcode("reader", { verbose: false });
 
-        let deviceId = null;
-        try {
-          const cams = await Html5Qrcode.getCameras();
-          if (cams?.length) {
-            const target = facingMode === "user" ? "front" : ["back", "rear", "environment", "main"];
-            const found = cams.find(c => {
-              const lbl = c.label.toLowerCase();
-              return target.some(t => lbl.includes(t));
-            });
-            deviceId = found ? found.id : cams[0].id;
-          }
-        } catch (e) {}
+        const config = {
+          fps: 12,
+          qrbox: { width: 280, height: 180 },
+          aspectRatio: 1.7777777778,
+          disableFlip: isFront,
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.CODE_39,
+          ]
+        };
+
+        // Самый надёжный способ — объект с ideal
+        const cameraConstraint = { facingMode: { ideal: facingMode } };
 
         await scanner.start(
-          deviceId || { facingMode: { ideal: facingMode } },
-          {
-            fps: 10,
-            qrbox: { width: 280, height: 180 },
-            aspectRatio: 1.777,
-            disableFlip: facingMode === "user",
-            formatsToSupport: [
-              Html5QrcodeSupportedFormats.QR_CODE,
-              Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.EAN_13,
-              Html5QrcodeSupportedFormats.UPC_A,
-            ]
-          },
+          cameraConstraint,
+          config,
           (decodedText, result) => {
             if (lastResult === decodedText) return;
             lastResult = decodedText;
@@ -162,33 +150,48 @@
             scanner.stop().catch(() => {});
 
             statusEl.innerHTML = `Найдено:<br><b>${decodedText}</b>`;
-            tg.MainButton.setText(`Отправить: ${decodedText.slice(0,30)}${decodedText.length>30?"…":""}`);
+            const short = decodedText.slice(0, 30) + (decodedText.length > 30 ? "…" : "");
+
+            tg.MainButton.setText(`Отправить → ${short}`);
             tg.MainButton.show();
 
             mainBtnContainer.classList.remove("hidden");
-            mainActionBtn.textContent = `Отправить → ${decodedText.slice(0,24)}${decodedText.length>24?"…":""}`;
+            mainActionBtn.textContent = `Отправить → ${decodedText.slice(0, 24)}${decodedText.length > 24 ? "…" : ""}`;
             mainActionBtn.onclick = () => {
               tg.sendData(decodedText);
               tg.close();
             };
           },
-          (err) => {} // silent scan error
+          () => {} // scan error callback — silent
         );
 
-        statusEl.textContent = "Наведите на код…";
+        statusEl.textContent = "Наведите камеру на код…";
         btnStop.classList.remove("hidden");
 
       } catch (err) {
-        console.error("Ошибка запуска:", err);
-        statusEl.textContent = "Не удалось запустить камеру. Попробуйте ещё раз.";
+        console.error("Ошибка камеры:", err.name, err.message, err.constraint);
+
+        if (err.name === "OverconstrainedError" && facingMode === "user") {
+          statusEl.textContent = "Фронтальная камера недоступна → пробуем любую…";
+          await new Promise(r => setTimeout(r, 400));
+
+          try {
+            await scanner.start(true, config, /* тот же callback */);
+            statusEl.textContent = "Запущена камера по умолчанию";
+            btnStop.classList.remove("hidden");
+            return;
+          } catch (e2) {
+            console.error("Fallback тоже провалился", e2);
+          }
+        }
+
+        statusEl.textContent = "Не удалось открыть камеру.\nРазрешите доступ в настройках Telegram → разрешить камеру.";
       }
     }
 
-    // ────────────────────────────────────────────────
-    //  Обработчики
-    // ────────────────────────────────────────────────
-    btnFront.onclick = () => initAndStartScanner("user");
-    btnBack.onclick  = () => initAndStartScanner("environment");
+    // ─── Event listeners ────────────────────────────────
+    btnFront.onclick = () => startScanner("user");
+    btnBack.onclick  = () => startScanner("environment");
     btnStop.onclick  = destroyScanner;
 
     tg.MainButton.onClick(() => {
@@ -199,8 +202,8 @@
     });
     tg.MainButton.hide();
 
-    // Первый запуск
-    setTimeout(() => initAndStartScanner("environment"), 400);
+    // Автозапуск задней камеры (самое частое использование)
+    setTimeout(() => startScanner("environment"), 600);
 
   </script>
 </body>
