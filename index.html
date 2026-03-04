@@ -80,10 +80,20 @@ button{
 <script>
 const tg = window.Telegram.WebApp;
 tg.ready();
-// Только для разработки / теста — потом можно убрать или сделать по условию
-if (true) {  // или if (tg.initDataUnsafe.user?.id === ТВОЙ_ID) — чтобы только ты видел
-    eruda.init();
-    console.log("Eruda запущена — должна появиться иконка консоли в правом нижнем углу");
+
+if (true) {
+    if (typeof eruda !== 'undefined') {
+        eruda.init();
+        console.log("Eruda запущена");
+    } else {
+        // fallback — пробуем подождать
+        setTimeout(() => {
+            if (typeof eruda !== 'undefined') {
+                eruda.init();
+                console.log("Eruda запущена (с задержкой)");
+            }
+        }, 800);
+    }
 }
 tg.expand();
 tg.enableClosingConfirmation();
