@@ -1,10 +1,19 @@
-<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1, user-scalable=no"><title>EAN13 Scanner</title><script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"/><script src="https://telegram.org/js/telegram-web-app.js"/><style>
+<!DOCTYPE html><html lang="ru">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>EAN13 Scanner</title><script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"/><script src="https://telegram.org/js/telegram-web-app.js"/><style>
 body{
     margin:0;
     background:#000;
     color:#fff;
     font-family:system-ui;
     overflow:hidden;
+}
+#reader video {
+    object-fit: cover !important;
+    width: 100% !important;
+    height: 100% !important;
 }
 
 #reader{
@@ -111,12 +120,13 @@ async function getBestBackCamera() {
                 console.error("Ошибка получения списка камер:", err);
                 return null;
             }
+        console.log("Найденные камеры:", videoDevices.map(d => d.label));
         }
         
 const config = {
     fps: 15,
     qrbox:{ width:300,height:160 },
-    aspectRatio:1.8,
+    //aspectRatio:1.8,
     formatsToSupport:[ Html5QrcodeSupportedFormats.EAN_13 ]
 };
 
@@ -149,7 +159,10 @@ async function startScanner(){
             { facingMode: { exact: "environment" } },
             config,
             onScan
-        );
+        ).catch(err => {
+    console.error("start failed", err);
+    statusEl.innerText = "Не удалось открыть камеру\n" + err.message;
+});
         return;
     } 
     catch(e){
