@@ -69,10 +69,20 @@ button{
     from{opacity:.8}
     to{opacity:0}
 }
-</style></head><body><div id="reader"/><div id="status">Запуск камеры…</div><div id="controls"><button id="photoBtn">Скан с фото</button></div><div class="flash" id="flash"/><input type="file" accept="image/*" capture="environment" id="fileInput" hidden> <script>
+</style>
+<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+</head>
+<body>
+<div id="reader"/><div id="status">Запуск камеры…</div><div id="controls"><button id="photoBtn">Скан с фото</button></div><div class="flash" id="flash"/><input type="file" accept="image/*" capture="environment" id="fileInput" hidden> 
 
+<script>
 const tg = window.Telegram.WebApp;
 tg.ready();
+// Только для разработки / теста — потом можно убрать или сделать по условию
+if (true) {  // или if (tg.initDataUnsafe.user?.id === ТВОЙ_ID) — чтобы только ты видел
+    eruda.init();
+    console.log("Eruda запущена — должна появиться иконка консоли в правом нижнем углу");
+}
 tg.expand();
 tg.enableClosingConfirmation();
 
