@@ -13,7 +13,6 @@
       --tg-theme-button-color: #2481cc;
       --tg-theme-button-text-color: #ffffff;
     }
-
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
       background: var(--tg-theme-bg-color);
@@ -23,90 +22,34 @@
       overflow: hidden;
       touch-action: manipulation;
     }
-
-    #reader {
-      position: fixed;
-      inset: 0;
-      background: #111;
-    }
-
+    #reader { position: fixed; inset: 0; background: #111; }
     #status {
-      position: fixed;
-      top: 16px;
-      left: 16px;
-      right: 16px;
-      text-align: center;
-      background: rgba(0,0,0,0.65);
-      backdrop-filter: blur(8px);
-      padding: 12px 16px;
-      border-radius: 16px;
-      font-size: 17px;
-      z-index: 20;
+      position: fixed; top: 16px; left: 16px; right: 16px;
+      text-align: center; background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
+      padding: 12px 16px; border-radius: 16px; font-size: 17px; z-index: 20;
       pointer-events: none;
     }
-
     #controls {
-      position: fixed;
-      bottom: 90px;
-      left: 0;
-      right: 0;
-      display: flex;
-      justify-content: center;
-      gap: 16px;
-      padding: 0 20px;
-      z-index: 20;
-      flex-wrap: wrap;
+      position: fixed; bottom: 90px; left: 0; right: 0;
+      display: flex; justify-content: center; gap: 16px; padding: 0 20px;
+      z-index: 20; flex-wrap: wrap;
     }
-
-    #main-btn-container {
-      position: fixed;
-      bottom: 16px;
-      left: 0;
-      right: 0;
-      padding: 0 20px;
-      z-index: 25;
-    }
-
+    #main-btn-container { position: fixed; bottom: 16px; left: 0; right: 0; padding: 0 20px; z-index: 25; }
     button {
-      padding: 14px 28px;
-      font-size: 17px;
-      border: none;
-      border-radius: 12px;
-      color: white;
-      background: #333;
-      cursor: pointer;
-      transition: background 0.2s;
+      padding: 14px 28px; font-size: 17px; border: none; border-radius: 12px;
+      color: white; background: #333; cursor: pointer; transition: background 0.2s;
     }
-
     button:hover, button:active { background: #555; }
-
-    button.primary {
-      background: var(--tg-theme-button-color);
-    }
-
-    button.primary:hover, button.primary:active {
-      background: #1a6eb3;
-    }
-
-    .flash {
-      position: fixed;
-      inset: 0;
-      background: #00c853;
-      opacity: 0;
-      pointer-events: none;
-      z-index: 15;
-      transition: opacity 0.4s;
-    }
-
+    button.primary { background: var(--tg-theme-button-color); }
+    button.primary:hover, button.primary:active { background: #1a6eb3; }
+    .flash { position: fixed; inset: 0; background: #00c853; opacity: 0; pointer-events: none; z-index: 15; transition: opacity 0.4s; }
     .flash.active { opacity: 0.7; }
-
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
 
   <div id="reader"></div>
-
   <div id="status">Запуск камеры…</div>
 
   <div id="controls">
@@ -129,8 +72,8 @@
     tg.expand();
     tg.enableClosingConfirmation();
 
-    const status = document.getElementById("status");
-    const flash  = document.getElementById("flash");
+    const statusEl = document.getElementById("status");
+    const flashEl  = document.getElementById("flash");
     const btnFront = document.getElementById("btnFront");
     const btnBack  = document.getElementById("btnBack");
     const btnStop  = document.getElementById("btnStop");
@@ -138,116 +81,116 @@
     const mainActionBtn    = document.getElementById("mainActionBtn");
 
     let scanner = null;
-    let currentStream = null;
     let lastResult = null;
-    let isScanning = false;
+    let isDestroyed = false;   // флаг, что сканер полностью уничтожен
 
     // ────────────────────────────────────────────────
-    //  Вспомогательные функции
+    //  Вспомогательные
     // ────────────────────────────────────────────────
-    function flashEffect() {
-      flash.classList.add("active");
-      setTimeout(() => flash.classList.remove("active"), 400);
+    function flash() {
+      flashEl.classList.add("active");
+      setTimeout(() => flashEl.classList.remove("active"), 400);
     }
 
-    function stopScanner() {
+    async function forceReleaseCamera() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === "videoinput");
+        if (videoDevices.length === 0) return;
+
+        // Пытаемся запросить пустой поток → это помогает "отпустить" камеру на iOS
+        const dummyStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        dummyStream.getTracks().forEach(t => t.stop());
+      } catch (e) {
+        // silent — нормально, если нет доступа
+      }
+    }
+
+    async function destroyScanner() {
       if (scanner) {
-        scanner.stop().catch(()=>{});
-        scanner.clear();
+        try { await scanner.stop(); } catch {}
+        try { scanner.clear(); } catch {}
         scanner = null;
       }
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-        currentStream = null;
-      }
-      isScanning = false;
-      mainBtnContainer.classList.add("hidden");
-      status.textContent = "Камера выключена";
+      await forceReleaseCamera();
+      isDestroyed = true;
+      statusEl.textContent = "Камера выключена";
       btnStop.classList.add("hidden");
+      mainBtnContainer.classList.add("hidden");
     }
 
-    async function startScanner(facingMode = "environment") {
-      stopScanner(); // на всякий случай
+    async function initAndStartScanner(facingMode = "environment") {
+      await destroyScanner();           // всегда чистим перед новым запуском
 
-      status.textContent = `Запуск ${facingMode === "user" ? "фронтальной" : "задней"} камеры…`;
+      statusEl.textContent = `Запуск ${facingMode === "user" ? "фронтальной" : "задней"} камеры…`;
 
       try {
-        scanner = new Html5Qrcode("reader", {
-          fps: 12,
-          qrbox: { width: 280, height: 180 },
-          aspectRatio: 1.777,           // ≈16:9
-          disableFlip: facingMode === "user", // фронталку не зеркалим
-          rememberLastUsedCamera: true,
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.UPC_A,
-            // можно добавить ещё: PDF417, DATA_MATRIX и т.д.
-          ]
-        });
+        scanner = new Html5Qrcode("reader", { verbose: false });
 
-        const cams = await Html5Qrcode.getCameras();
         let deviceId = null;
-
-        if (cams && cams.length > 0) {
-          // пытаемся выбрать нужную камеру
-          const targetLabel = facingMode === "user" ? "front" : "back";
-          const found = cams.find(c =>
-            c.label.toLowerCase().includes(targetLabel) ||
-            c.label.toLowerCase().includes(facingMode)
-          );
-          if (found) deviceId = found.id;
-          else deviceId = cams[0].id; // fallback
-        }
+        try {
+          const cams = await Html5Qrcode.getCameras();
+          if (cams?.length) {
+            const target = facingMode === "user" ? "front" : ["back", "rear", "environment", "main"];
+            const found = cams.find(c => {
+              const lbl = c.label.toLowerCase();
+              return target.some(t => lbl.includes(t));
+            });
+            deviceId = found ? found.id : cams[0].id;
+          }
+        } catch (e) {}
 
         await scanner.start(
-          deviceId || { facingMode },
-          { fps: 12, qrbox: { width: 280, height: 180 } },
-          (decodedText, decodedResult) => {
-            if (lastResult === decodedText) return; // защита от дубликатов
+          deviceId || { facingMode: { ideal: facingMode } },
+          {
+            fps: 10,
+            qrbox: { width: 280, height: 180 },
+            aspectRatio: 1.777,
+            disableFlip: facingMode === "user",
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.QR_CODE,
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.UPC_A,
+            ]
+          },
+          (decodedText, result) => {
+            if (lastResult === decodedText) return;
             lastResult = decodedText;
 
-            flashEffect();
-            scanner.stop().catch(()=>{});
+            flash();
+            scanner.stop().catch(() => {});
 
-            status.innerHTML = `Найдено:<br><b>${decodedText}</b>`;
+            statusEl.innerHTML = `Найдено:<br><b>${decodedText}</b>`;
             tg.MainButton.setText(`Отправить: ${decodedText.slice(0,30)}${decodedText.length>30?"…":""}`);
             tg.MainButton.show();
 
             mainBtnContainer.classList.remove("hidden");
-            mainActionBtn.textContent = `Отправить: ${decodedText.slice(0,24)}${decodedText.length>24?"…":""}`;
+            mainActionBtn.textContent = `Отправить → ${decodedText.slice(0,24)}${decodedText.length>24?"…":""}`;
             mainActionBtn.onclick = () => {
               tg.sendData(decodedText);
               tg.close();
             };
-
-            // можно раскомментировать автозакрытие через 4 секунды
-            // setTimeout(() => { tg.sendData(decodedText); tg.close(); }, 4000);
           },
-          (err) => {
-            // тихо игнорируем ошибки сканирования (нет кода и т.п.)
-          }
+          (err) => {} // silent scan error
         );
 
-        isScanning = true;
-        status.textContent = "Наведите на QR-код или штрих-код";
+        statusEl.textContent = "Наведите на код…";
         btnStop.classList.remove("hidden");
 
       } catch (err) {
-        console.error(err);
-        status.textContent = "Не удалось запустить камеру / сканер";
+        console.error("Ошибка запуска:", err);
+        statusEl.textContent = "Не удалось запустить камеру. Попробуйте ещё раз.";
       }
     }
 
     // ────────────────────────────────────────────────
-    //  Кнопки
+    //  Обработчики
     // ────────────────────────────────────────────────
-    btnFront.onclick = () => startScanner("user");
-    btnBack.onclick  = () => startScanner("environment");
-    btnStop.onclick  = stopScanner;
+    btnFront.onclick = () => initAndStartScanner("user");
+    btnBack.onclick  = () => initAndStartScanner("environment");
+    btnStop.onclick  = destroyScanner;
 
-    // Telegram MainButton как запасной вариант
     tg.MainButton.onClick(() => {
       if (lastResult) {
         tg.sendData(lastResult);
@@ -256,10 +199,8 @@
     });
     tg.MainButton.hide();
 
-    // Автозапуск задней камеры
-    setTimeout(() => {
-      startScanner("environment");
-    }, 500);
+    // Первый запуск
+    setTimeout(() => initAndStartScanner("environment"), 400);
 
   </script>
 </body>
